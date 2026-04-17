@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Landing Admin — Panel de gestión</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f5f2ed; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+
+const SUPABASE_URL = "https://kkxfyuzqokxikwpnmnlr.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtreGZ5dXpxb2t4aWt3cG5tbmxyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NjkyMjIsImV4cCI6MjA5MDA0NTIyMn0.CM4t5cfqOoFJJWRIBh2zNrudC0dTAxRwxRSy5D6TDL0";
+
+const sb = async (path, opts = {}) => {
+  const headers = {
+    apikey: SUPABASE_KEY,
+    Authorization: "Bearer " + SUPABASE_KEY,
+    "Content-Type": "application/json",
+  };
+  if (opts.method === "POST" || opts.method === "PATCH") {
+    headers["Prefer"] = "return=representation";
+  }
+  try {
+    const r = await fetch(SUPABASE_URL + "/rest/v1/" + path, { ...opts, headers });
+    if (opts.method === "DELETE") return [];
+    const text = await r.text();
+    return text ? JSON.parse(text) : [];
+  } catch (e) {
+    console.error("Supabase error:", e);
+    return [];
+  }
+};
+
+const DAYS_ES = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
+
+/* ─── Tiny components ─── */
+const Pill = ({ active, onClick, children }) => (
+  <button onClick={onClick} style={{
+    padding:"6px 16px", borderRadius:20, border:"1px solid",
+    borderColor: active ? "#9E4A3A" : "#ddd", background: active ? "#9E4A3A" : "#fff",
+    color: active ? "#fff" : "#555", cursor:"pointer", fontSize:13, fontWeight:500,
+  }}>{children}</button>
+);
+
+const Input = ({ label, ...props }) => (
+  <label style={{ display:"flex", flexDirection:"column", gap:4, fontSize:13, color:"#555", fontWeight:500 }}>
+    {label}
+    <input {...props} style={{ padding:"8px 12px", borderRadius:6, border:"1px solid #ddd", fontSize:14, fontFamily:"inherit", outline:"none", ...(props.style||{}) }} />
+  </label>
+);
+
+const Textarea = ({ label, ...props }) => (
+  <label style={{ display:"flex", flexDirection:"column", gap:4, fontSize:13, color:"#555", fontWeight:500 }}>
+    {label}
+    <textarea {...props} rows={3} style={{ padding:"8px 12px", borderRadius:6, border:"1px solid #ddd", fontSize:14, fontFamily:"inherit", resize:"vertical", outline:"none" }} />
+  </label>
+);
+
+const Btn = ({ variant="primary", style:st, ...props }) => (
+  <button {...props} style={{
+    padding:"8px 20px", borderRadius:6, fontSize:13, fontWeight:600, cursor:"pointer",
+    border: variant === "primary" ? "none" : "1px solid #ddd",
+    background: variant === "primary" ? "#9E4A3A" : variant === "danger" ? "#dc3545" : "#fff",
+    color: variant === "primary" || variant === "danger" ? "#fff" : "#333", ...st,
+  }} />
+);
+
+const Card = ({ children }) => (
+  <div style={{ background:"#fff", borderRadius:10, border:"1px solid #eee", padding:20 }}>{children}</div>
+);
+
+/* ═══════════════ MAIN APP ═══════════════ */
+function AdminPanel() {
+  const [venues, setVenues] = useState([]);
+  const [selectedVenue, setSelectedVenue] = useState(null);
+  const [tab, setTab] = useState("info");
+  const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const showToast = (msg, type="success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 2500);
+  };
+
+  const loadVenues = useCallback(async () => {
+    setLoading(true);
+    const data = await sb("venues?select=*&order=created_at.asc");
+    setVenues(data || []);
+    setSelectedVenue(prev => prev ? prev : (data?.length ? data[0] : null));
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadVenues(); }, [loadVenues]);
+
+  const venue = venues.find(v => v.id === selectedVenue?.id);
+
+  return (
+    <div style={{ minHeight:"100vh", background:"#f5f2ed" }}>
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position:"fixed", top:20, right:20, zIndex:999, padding:"10px 20px",
+          borderRadius:8, background: toast.type==="success" ? "#2d6a4f" : "#dc3545",
+          color:"#fff", fontSize:13, fontWeight:600, boxShadow:"0 4px 12px rgba(0,0,0,.15)",
+          animation:"fadeIn .3s ease",
+        }}>{toast.msg}</div>
+      )}
+
+      {/* Header */}
+      <header style={{
+        background:"#1A1A1A", padding:"12px 20px", display:"flex",
+        justifyContent:"space-between", alignItems:"center", borderBottom:"2px solid #9E4A3A",
+      }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
+            background:"none", border:"none", color:"#F5C87A", fontSize:20, cursor:"pointer",
+            display: window.innerWidth < 768 ? "block" : "none",
+          }}>☰</button>
+          <span style={{ fontSize:18 }}>☕</span>
+          <span style={{ color:"#F5C87A", fontWeight:700, fontSize:15 }}>Landing Admin</span>
+          <span style={{ color:"#9E4A3A", fontSize:11, fontWeight:500, background:"rgba(158,74,58,.15)", padding:"2px 8px", borderRadius:10 }}>
+            Panel de gestión
+          </span>
+        </div>
+      </header>
+
+      <div style={{ display:"flex", minHeight:"calc(100vh - 50px)" }}>
+        {/* Sidebar */}
+        <aside style={{
+          width:220, background:"#fff", borderRight:"1px solid #eee", padding:"16px 0", flexShrink:0,
+          position: window.innerWidth < 768 ? "fixed" : "relative",
+          top: window.innerWidth < 768 ? 50 : "auto",
+          left:0, bottom:0, zIndex:50,
+          transform: window.innerWidth < 768 && !sidebarOpen ? "translateX(-100%)" : "none",
+          transition:"transform .3s",
+          boxShadow: sidebarOpen ? "4px 0 12px rgba(0,0,0,.1)" : "none",
+        }}>
+          <div style={{ padding:"0 14px 10px", fontSize:11, fontWeight:700, color:"#999", textTransform:"uppercase", letterSpacing:1 }}>
+            Locales
+          </div>
+          {venues.map(v => (
+            <button key={v.id} onClick={() => { setSelectedVenue(v); setTab("info"); setSidebarOpen(false); }}
+              style={{
+                display:"block", width:"100%", textAlign:"left", padding:"10px 14px",
+                border:"none", cursor:"pointer", fontSize:14,
+                fontWeight: v.id === selectedVenue?.id ? 600 : 400,
+                background: v.id === selectedVenue?.id ? "#faf5ee" : "transparent",
+                color: v.id === selectedVenue?.id ? "#9E4A3A" : "#333",
+                borderLeft: v.id === selectedVenue?.id ? "3px solid #9E4A3A" : "3px solid transparent",
+              }}>
+              {v.name}
+              <span style={{ display:"block", fontSize:11, color:"#999", marginTop:2 }}>/{v.slug}</span>
+            </button>
+          ))}
+          <div style={{ padding:"10px 14px" }}>
+            <Btn style={{ width:"100%", fontSize:12 }} onClick={async () => {
+              const name = prompt("Nombre del nuevo local:");
+              if (!name) return;
+              const slug = name.toLowerCase().replace(/\s+/g,"-").replace(/[^a-z0-9-]/g,"");
+              await sb("venues", { method:"POST", body:JSON.stringify({ name, slug, is_published:false }) });
+              await loadVenues();
+              showToast("Local creado");
+            }}>+ Nuevo local</Btn>
+          </div>
+        </aside>
+
+        {/* Main */}
+        <main style={{ flex:1, padding:20, overflowY:"auto", minWidth:0 }}>
+          {loading ? (
+            <div style={{ textAlign:"center", padding:60, color:"#999" }}>Cargando...</div>
+          ) : !venue ? (
+            <div style={{ textAlign:"center", padding:60, color:"#999" }}>
+              <p style={{ fontSize:40, marginBottom:12 }}>☕</p>
+              <p>No hay locales. Crea uno desde la barra lateral.</p>
+            </div>
+          ) : (
+            <>
+              <div style={{ display:"flex", gap:6, marginBottom:20, flexWrap:"wrap" }}>
+                {[
+                  ["info","📋 Info"],["hours","🕐 Horarios"],["categories","📁 Categorías"],
+                  ["menu","🍽 Carta"],["specials","⭐ Destacados"],["photos","📷 Fotos"],
+                ].map(([key,label]) => (
+                  <Pill key={key} active={tab===key} onClick={() => setTab(key)}>{label}</Pill>
+                ))}
+              </div>
+              {tab === "info" && <VenueInfo venue={venue} onSave={loadVenues} showToast={showToast} />}
+              {tab === "hours" && <VenueHours venue={venue} showToast={showToast} />}
+              {tab === "categories" && <Categories venue={venue} showToast={showToast} />}
+              {tab === "menu" && <MenuItems venue={venue} showToast={showToast} />}
+              {tab === "specials" && <Specials venue={venue} showToast={showToast} />}
+              {tab === "photos" && <Photos venue={venue} showToast={showToast} />}
+            </>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════ TAB: INFO ═══════════════ */
+function VenueInfo({ venue, onSave, showToast }) {
+  const [form, setForm] = useState(venue);
+  useEffect(() => setForm(venue), [venue]);
+  const upd = (k,v) => setForm(p => ({ ...p, [k]:v }));
+
+  const save = async () => {
+    const { id, created_at, updated_at, ...rest } = form;
+    await sb("venues?id=eq." + id, { method:"PATCH", body:JSON.stringify({ ...rest, updated_at: new Date().toISOString() }) });
+    onSave();
+    showToast("Información guardada");
+  };
+
+  return (
+    <Card>
+      <h2 style={{ fontSize:17, fontWeight:700, marginBottom:18, color:"#1A1A1A" }}>Información del local</h2>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+        <Input label="Nombre" value={form.name||""} onChange={e => upd("name",e.target.value)} />
+        <Input label="Slug (URL)" value={form.slug||""} onChange={e => upd("slug",e.target.value)} />
+        <Input label="Dirección" value={form.address||""} onChange={e => upd("address",e.target.value)} />
+        <Input label="Ciudad" value={form.city||""} onChange={e => upd("city",e.target.value)} />
+        <Input label="Barrio" value={form.neighborhood||""} onChange={e => upd("neighborhood",e.target.value)} />
+        <Input label="Teléfono" value={form.phone||""} onChange={e => upd("phone",e.target.value)} />
+        <Input label="Email" value={form.email||""} onChange={e => upd("email",e.target.value)} />
+        <Input label="Instagram" value={form.instagram||""} onChange={e => upd("instagram",e.target.value)} />
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14, marginTop:14 }}>
+        <Textarea label="Tagline (ES)" value={form.tagline_es||""} onChange={e => upd("tagline_es",e.target.value)} />
+        <Textarea label="Tagline (EN)" value={form.tagline_en||""} onChange={e => upd("tagline_en",e.target.value)} />
+        <Textarea label="Descripción (ES)" value={form.description_es||""} onChange={e => upd("description_es",e.target.value)} />
+        <Textarea label="Descripción (EN)" value={form.description_en||""} onChange={e => upd("description_en",e.target.value)} />
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14, marginTop:14 }}>
+        <Input label="URL imagen hero" value={form.hero_image_url||""} onChange={e => upd("hero_image_url",e.target.value)} />
+        <Input label="URL logo" value={form.logo_url||""} onChange={e => upd("logo_url",e.target.value)} />
+        <div style={{ gridColumn:"1/-1" }}>
+          <Input label="Google Maps Embed URL" value={form.google_maps_embed||""} onChange={e => upd("google_maps_embed",e.target.value)} />
+        </div>
+      </div>
+      <div style={{ display:"flex", alignItems:"center", gap:16, marginTop:18 }}>
+        <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:14, cursor:"pointer" }}>
+          <input type="checkbox" checked={form.is_published||false} onChange={e => upd("is_published",e.target.checked)} />
+          <span style={{ fontWeight:600, color: form.is_published ? "#2d6a4f" : "#999" }}>
+            {form.is_published ? "✅ Publicado" : "Borrador"}
+          </span>
+        </label>
+        <div style={{ flex:1 }} />
+        <Btn onClick={save}>💾 Guardar cambios</Btn>
+      </div>
+    </Card>
+  );
+}
+
+/* ═══════════════ TAB: HOURS ═══════════════ */
+function VenueHours({ venue, showToast }) {
+  const [hours, setHours] = useState([]);
+  const load = async () => {
+    const data = await sb("venue_hours?venue_id=eq." + venue.id + "&order=day_of_week.asc");
+    setHours(data || []);
+  };
+  useEffect(() => { load(); }, [venue.id]);
+
+  const save = async (h) => {
+    await sb("venue_hours?id=eq." + h.id, {
+      method:"PATCH", body:JSON.stringify({ open_time:h.open_time, close_time:h.close_time, is_closed:h.is_closed }),
+    });
+    showToast("Horario guardado");
+  };
+
+  const initAll = async () => {
+    for (let d = 0; d < 7; d++) {
+      await sb("venue_hours", { method:"POST", body:JSON.stringify({ venue_id:venue.id, day_of_week:d, open_time:"07:00", close_time:"20:00", is_closed:false }) });
+    }
+    load();
+    showToast("Horarios inicializados");
+  };
+
+  return (
+    <Card>
+      <h2 style={{ fontSize:17, fontWeight:700, marginBottom:18 }}>Horarios</h2>
+      {hours.length === 0 ? (
+        <div style={{ textAlign:"center", padding:30 }}>
+          <p style={{ color:"#999", marginBottom:12 }}>No hay horarios configurados.</p>
+          <Btn onClick={initAll}>Crear horarios (L-D)</Btn>
+        </div>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+          {hours.map(h => (
+            <div key={h.id} style={{
+              display:"flex", alignItems:"center", gap:10, padding:"8px 12px", flexWrap:"wrap",
+              background: h.is_closed ? "#fef2f2" : "#f9fafb", borderRadius:8,
+            }}>
+              <span style={{ width:90, fontWeight:600, fontSize:14 }}>{DAYS_ES[h.day_of_week]}</span>
+              <label style={{ display:"flex", alignItems:"center", gap:4, fontSize:13 }}>
+                <input type="checkbox" checked={h.is_closed||false} onChange={e => {
+                  setHours(prev => prev.map(x => x.id===h.id ? { ...x, is_closed:e.target.checked } : x));
+                }} /> Cerrado
+              </label>
+              {!h.is_closed && (
+                <>
+                  <input type="time" value={h.open_time||"07:00"} onChange={e => {
+                    setHours(prev => prev.map(x => x.id===h.id ? { ...x, open_time:e.target.value } : x));
+                  }} style={{ padding:"4px 8px", borderRadius:4, border:"1px solid #ddd", fontSize:14 }} />
+                  <span style={{ color:"#999" }}>—</span>
+                  <input type="time" value={h.close_time||"20:00"} onChange={e => {
+                    setHours(prev => prev.map(x => x.id===h.id ? { ...x, close_time:e.target.value } : x));
+                  }} style={{ padding:"4px 8px", borderRadius:4, border:"1px solid #ddd", fontSize:14 }} />
+                </>
+              )}
+              <div style={{ flex:1 }} />
+              <Btn variant="ghost" onClick={() => save(hours.find(x => x.id===h.id))} style={{ fontSize:12, padding:"4px 12px" }}>Guardar</Btn>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* ═══════════════ TAB: CATEGORIES ═══════════════ */
+function Categories({ venue, showToast }) {
+  const [cats, setCats] = useState([]);
+  const [nc, setNc] = useState({ name_es:"", name_en:"", icon:"" });
+
+  const load = async () => {
+    const data = await sb("menu_categories?venue_id=eq." + venue.id + "&order=sort_order.asc");
+    setCats(data || []);
+  };
+  useEffect(() => { load(); }, [venue.id]);
+
+  const add = async () => {
+    if (!nc.name_es) return;
+    await sb("menu_categories", { method:"POST", body:JSON.stringify({ venue_id:venue.id, ...nc, sort_order:cats.length }) });
+    setNc({ name_es:"", name_en:"", icon:"" });
+    load(); showToast("Categoría añadida");
+  };
+  const remove = async (id) => { if (!confirm("¿Eliminar?")) return; await sb("menu_categories?id=eq."+id, { method:"DELETE" }); load(); showToast("Eliminada","error"); };
+  const updateCat = async (c) => {
+    await sb("menu_categories?id=eq."+c.id, { method:"PATCH", body:JSON.stringify({ name_es:c.name_es, name_en:c.name_en, icon:c.icon, sort_order:c.sort_order }) });
+    showToast("Categoría actualizada");
+  };
+
+  return (
+    <Card>
+      <h2 style={{ fontSize:17, fontWeight:700, marginBottom:18 }}>Categorías del menú</h2>
+      <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:18 }}>
+        {cats.map(c => (
+          <div key={c.id} style={{ display:"flex", gap:6, alignItems:"center", padding:"8px 10px", background:"#f9fafb", borderRadius:8, flexWrap:"wrap" }}>
+            <input value={c.icon||""} onChange={e => setCats(p => p.map(x => x.id===c.id ? { ...x, icon:e.target.value } : x))}
+              style={{ width:36, textAlign:"center", padding:4, border:"1px solid #ddd", borderRadius:4, fontSize:16 }} placeholder="🍽" />
+            <input value={c.name_es||""} onChange={e => setCats(p => p.map(x => x.id===c.id ? { ...x, name_es:e.target.value } : x))}
+              style={{ flex:1, minWidth:80, padding:"6px 8px", border:"1px solid #ddd", borderRadius:4, fontSize:13 }} placeholder="Nombre ES" />
+            <input value={c.name_en||""} onChange={e => setCats(p => p.map(x => x.id===c.id ? { ...x, name_en:e.target.value } : x))}
+              style={{ flex:1, minWidth:80, padding:"6px 8px", border:"1px solid #ddd", borderRadius:4, fontSize:13 }} placeholder="Name EN" />
+            <input type="number" value={c.sort_order??0} onChange={e => setCats(p => p.map(x => x.id===c.id ? { ...x, sort_order:+e.target.value } : x))}
+              style={{ width:45, padding:"6px", border:"1px solid #ddd", borderRadius:4, fontSize:13, textAlign:"center" }} />
+            <Btn variant="ghost" onClick={() => updateCat(cats.find(x => x.id===c.id))} style={{ fontSize:11, padding:"4px 8px" }}>💾</Btn>
+            <Btn variant="danger" onClick={() => remove(c.id)} style={{ fontSize:11, padding:"4px 8px" }}>✕</Btn>
+          </div>
+        ))}
+      </div>
+      <div style={{ display:"flex", gap:6, alignItems:"flex-end", padding:10, background:"#faf5ee", borderRadius:8, flexWrap:"wrap" }}>
+        <input value={nc.icon} onChange={e => setNc(p => ({ ...p, icon:e.target.value }))} style={{ width:36, textAlign:"center", padding:6, border:"1px solid #ddd", borderRadius:4, fontSize:16 }} placeholder="🍽" />
+        <input value={nc.name_es} onChange={e => setNc(p => ({ ...p, name_es:e.target.value }))} style={{ flex:1, minWidth:80, padding:"6px 8px", border:"1px solid #ddd", borderRadius:4, fontSize:13 }} placeholder="Nombre ES" />
+        <input value={nc.name_en} onChange={e => setNc(p => ({ ...p, name_en:e.target.value }))} style={{ flex:1, minWidth:80, padding:"6px 8px", border:"1px solid #ddd", borderRadius:4, fontSize:13 }} placeholder="Name EN" />
+        <Btn onClick={add}>+ Añadir</Btn>
+      </div>
+    </Card>
+  );
+}
+
+/* ═══════════════ TAB: MENU ITEMS ═══════════════ */
+function MenuItems({ venue, showToast }) {
+  const [items, setItems] = useState([]);
+  const [cats, setCats] = useState([]);
+  const [filterCat, setFilterCat] = useState("all");
+  const [editing, setEditing] = useState(null);
+  const [ni, setNi] = useState({ name_es:"", name_en:"", price:"", category_id:"" });
+
+  const load = async () => {
+    const [i, c] = await Promise.all([
+      sb("menu_items?venue_id=eq." + venue.id + "&order=sort_order.asc"),
+      sb("menu_categories?venue_id=eq." + venue.id + "&order=sort_order.asc"),
+    ]);
+    setItems(i || []); setCats(c || []);
+  };
+  useEffect(() => { load(); }, [venue.id]);
+
+  const filtered = filterCat === "all" ? items : items.filter(i => i.category_id === filterCat);
+  const catName = (id) => cats.find(c => c.id === id)?.name_es || "—";
+
+  const saveItem = async (item) => {
+    const { id, venue_id, created_at, ...rest } = item;
+    await sb("menu_items?id=eq."+id, { method:"PATCH", body:JSON.stringify({ ...rest, updated_at:new Date().toISOString() }) });
+    setEditing(null); load(); showToast("Producto actualizado");
+  };
+  const addItem = async () => {
+    if (!ni.name_es || !ni.price) return;
+    await sb("menu_items", { method:"POST", body:JSON.stringify({ venue_id:venue.id, ...ni, price:parseFloat(ni.price), sort_order:items.length, is_available:true, is_featured:false }) });
+    setNi({ name_es:"", name_en:"", price:"", category_id:"" }); load(); showToast("Producto añadido");
+  };
+  const removeItem = async (id) => { if (!confirm("¿Eliminar?")) return; await sb("menu_items?id=eq."+id, { method:"DELETE" }); load(); showToast("Eliminado","error"); };
+
+  return (
+    <Card>
+      <h2 style={{ fontSize:17, fontWeight:700, marginBottom:14 }}>Carta ({items.length} productos)</h2>
+
+      <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:14 }}>
+        <Pill active={filterCat==="all"} onClick={() => setFilterCat("all")}>Todos</Pill>
+        {cats.map(c => <Pill key={c.id} active={filterCat===c.id} onClick={() => setFilterCat(c.id)}>{c.icon} {c.name_es}</Pill>)}
+      </div>
+
+      <div style={{ overflowX:"auto" }}>
+        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+          <thead>
+            <tr style={{ borderBottom:"2px solid #eee", textAlign:"left" }}>
+              <th style={{ padding:"8px 8px", color:"#999", fontWeight:600 }}>Nombre ES</th>
+              <th style={{ padding:"8px 8px", color:"#999", fontWeight:600 }}>Name EN</th>
+              <th style={{ padding:"8px 8px", color:"#999", fontWeight:600 }}>Categoría</th>
+              <th style={{ padding:"8px 8px", color:"#999", fontWeight:600, textAlign:"right" }}>Precio</th>
+              <th style={{ padding:"8px 8px", color:"#999", fontWeight:600, textAlign:"center" }}>✓</th>
+              <th style={{ padding:"8px 8px" }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(item => (
+              <tr key={item.id} style={{ borderBottom:"1px solid #f3f3f3", background: editing===item.id ? "#faf5ee" : "transparent" }}>
+                {editing===item.id ? (
+                  <>
+                    <td style={{ padding:"6px 8px" }}>
+                      <input value={item.name_es||""} onChange={e => setItems(p => p.map(x => x.id===item.id ? { ...x, name_es:e.target.value } : x))}
+                        style={{ width:"100%", padding:"4px 6px", border:"1px solid #ddd", borderRadius:4, fontSize:13 }} />
+                    </td>
+                    <td style={{ padding:"6px 8px" }}>
+                      <input value={item.name_en||""} onChange={e => setItems(p => p.map(x => x.id===item.id ? { ...x, name_en:e.target.value } : x))}
+                        style={{ width:"100%", padding:"4px 6px", border:"1px solid #ddd", borderRadius:4, fontSize:13 }} />
+                    </td>
+                    <td style={{ padding:"6px 8px" }}>
+                      <select value={item.category_id||""} onChange={e => setItems(p => p.map(x => x.id===item.id ? { ...x, category_id:e.target.value } : x))}
+                        style={{ padding:"4px 6px", border:"1px solid #ddd", borderRadius:4, fontSize:13, width:"100%" }}>
+                        <option value="">—</option>
+                        {cats.map(c => <option key={c.id} value={c.id}>{c.name_es}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding:"6px 8px" }}>
+                      <input type="number" step="0.01" value={item.price} onChange={e => setItems(p => p.map(x => x.id===item.id ? { ...x, price:parseFloat(e.target.value) } : x))}
+                        style={{ width:65, padding:"4px 6px", border:"1px solid #ddd", borderRadius:4, fontSize:13, textAlign:"right" }} />
+                    </td>
+                    <td style={{ padding:"6px 8px", textAlign:"center" }}>
+                      <input type="checkbox" checked={item.is_available} onChange={e => setItems(p => p.map(x => x.id===item.id ? { ...x, is_available:e.target.checked } : x))} />
+                    </td>
+                    <td style={{ padding:"6px 8px", whiteSpace:"nowrap" }}>
+                      <Btn onClick={() => saveItem(items.find(x => x.id===item.id))} style={{ fontSize:11, padding:"3px 8px", marginRight:4 }}>💾</Btn>
+                      <Btn variant="ghost" onClick={() => setEditing(null)} style={{ fontSize:11, padding:"3px 6px" }}>✕</Btn>
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td style={{ padding:"8px 8px", fontWeight:500 }}>{item.name_es}</td>
+                    <td style={{ padding:"8px 8px", color:"#888" }}>{item.name_en||"—"}</td>
+                    <td style={{ padding:"8px 8px" }}>
+                      <span style={{ background:"#f3f0eb", padding:"2px 8px", borderRadius:10, fontSize:12 }}>{catName(item.category_id)}</span>
+                    </td>
+                    <td style={{ padding:"8px 8px", textAlign:"right", fontWeight:600, color:"#9E4A3A" }}>{Number(item.price).toFixed(2)}€</td>
+                    <td style={{ padding:"8px 8px", textAlign:"center" }}>{item.is_available ? "✅" : "❌"}</td>
+                    <td style={{ padding:"8px 8px", whiteSpace:"nowrap" }}>
+                      <Btn variant="ghost" onClick={() => setEditing(item.id)} style={{ fontSize:11, padding:"3px 8px", marginRight:4 }}>✏️</Btn>
+                      <Btn variant="danger" onClick={() => removeItem(item.id)} style={{ fontSize:11, padding:"3px 6px" }}>✕</Btn>
+                    </td>
+                  </>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ display:"flex", gap:6, alignItems:"flex-end", marginTop:14, padding:10, background:"#faf5ee", borderRadius:8, flexWrap:"wrap" }}>
+        <input value={ni.name_es} onChange={e => setNi(p => ({ ...p, name_es:e.target.value }))} style={{ flex:2, minWidth:100, padding:"6px 8px", border:"1px solid #ddd", borderRadius:4, fontSize:13 }} placeholder="Nombre ES" />
+        <input value={ni.name_en} onChange={e => setNi(p => ({ ...p, name_en:e.target.value }))} style={{ flex:2, minWidth:100, padding:"6px 8px", border:"1px solid #ddd", borderRadius:4, fontSize:13 }} placeholder="Name EN" />
+        <select value={ni.category_id} onChange={e => setNi(p => ({ ...p, category_id:e.target.value }))} style={{ flex:1, minWidth:80, padding:"6px 8px", border:"1px solid #ddd", borderRadius:4, fontSize:13 }}>
+          <option value="">Categoría</option>
+          {cats.map(c => <option key={c.id} value={c.id}>{c.name_es}</option>)}
+        </select>
+        <input type="number" step="0.01" value={ni.price} onChange={e => setNi(p => ({ ...p, price:e.target.value }))} style={{ width:70, padding:"6px 8px", border:"1px solid #ddd", borderRadius:4, fontSize:13, textAlign:"right" }} placeholder="€" />
+        <Btn onClick={addItem}>+ Añadir</Btn>
+      </div>
+    </Card>
+  );
+}
+
+/* ═══════════════ TAB: SPECIALS ═══════════════ */
+function Specials({ venue, showToast }) {
+  const [items, setItems] = useState([]);
+  const [ni, setNi] = useState({ title_es:"", title_en:"", description_es:"", description_en:"", price:"" });
+
+  const load = async () => { const d = await sb("venue_specials?venue_id=eq."+venue.id+"&order=created_at.asc"); setItems(d||[]); };
+  useEffect(() => { load(); }, [venue.id]);
+
+  const add = async () => {
+    if (!ni.title_es) return;
+    await sb("venue_specials", { method:"POST", body:JSON.stringify({ venue_id:venue.id, ...ni, price:ni.price?parseFloat(ni.price):null, is_active:true }) });
+    setNi({ title_es:"", title_en:"", description_es:"", description_en:"", price:"" }); load(); showToast("Destacado añadido");
+  };
+  const remove = async (id) => { await sb("venue_specials?id=eq."+id, { method:"DELETE" }); load(); showToast("Eliminado","error"); };
+  const toggle = async (s) => { await sb("venue_specials?id=eq."+s.id, { method:"PATCH", body:JSON.stringify({ is_active:!s.is_active }) }); load(); };
+
+  return (
+    <Card>
+      <h2 style={{ fontSize:17, fontWeight:700, marginBottom:18 }}>Promociones / Destacados</h2>
+      <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:18 }}>
+        {items.map(s => (
+          <div key={s.id} style={{ padding:12, borderRadius:8, border:"1px solid #eee", background:s.is_active?"#faf5ee":"#f9f9f9", opacity:s.is_active?1:.6 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
+              <div>
+                <strong style={{ fontSize:14 }}>{s.title_es}</strong>
+                {s.title_en && <span style={{ color:"#999", marginLeft:8, fontSize:13 }}>/ {s.title_en}</span>}
+                {s.price && <span style={{ marginLeft:10, color:"#9E4A3A", fontWeight:700 }}>{Number(s.price).toFixed(2)}€</span>}
+              </div>
+              <div style={{ display:"flex", gap:6 }}>
+                <Btn variant="ghost" onClick={() => toggle(s)} style={{ fontSize:11, padding:"3px 8px" }}>{s.is_active?"Desactivar":"Activar"}</Btn>
+                <Btn variant="danger" onClick={() => remove(s.id)} style={{ fontSize:11, padding:"3px 6px" }}>✕</Btn>
+              </div>
+            </div>
+            {s.description_es && <p style={{ fontSize:13, color:"#666", marginTop:6 }}>{s.description_es}</p>}
+          </div>
+        ))}
+      </div>
+      <div style={{ padding:12, background:"#faf5ee", borderRadius:8, display:"flex", flexDirection:"column", gap:8 }}>
+        <div style={{ fontSize:13, fontWeight:600, color:"#9E4A3A" }}>Nuevo destacado</div>
+        <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+          <input value={ni.title_es} onChange={e => setNi(p => ({ ...p, title_es:e.target.value }))} placeholder="Título ES" style={{ flex:1, minWidth:100, padding:"6px 8px", border:"1px solid #ddd", borderRadius:4, fontSize:13 }} />
+          <input value={ni.title_en} onChange={e => setNi(p => ({ ...p, title_en:e.target.value }))} placeholder="Title EN" style={{ flex:1, minWidth:100, padding:"6px 8px", border:"1px solid #ddd", borderRadius:4, fontSize:13 }} />
+          <input type="number" step="0.01" value={ni.price} onChange={e => setNi(p => ({ ...p, price:e.target.value }))} placeholder="€" style={{ width:70, padding:"6px 8px", border:"1px solid #ddd", borderRadius:4, fontSize:13, textAlign:"right" }} />
+        </div>
+        <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+          <input value={ni.description_es} onChange={e => setNi(p => ({ ...p, description_es:e.target.value }))} placeholder="Descripción ES" style={{ flex:1, minWidth:100, padding:"6px 8px", border:"1px solid #ddd", borderRadius:4, fontSize:13 }} />
+          <input value={ni.description_en} onChange={e => setNi(p => ({ ...p, description_en:e.target.value }))} placeholder="Description EN" style={{ flex:1, minWidth:100, padding:"6px 8px", border:"1px solid #ddd", borderRadius:4, fontSize:13 }} />
+        </div>
+        <Btn onClick={add} style={{ alignSelf:"flex-start" }}>+ Añadir destacado</Btn>
+      </div>
+    </Card>
+  );
+}
+
+/* ═══════════════ TAB: PHOTOS ═══════════════ */
+function Photos({ venue, showToast }) {
+  const [photos, setPhotos] = useState([]);
+  const [url, setUrl] = useState("");
+  const [cap, setCap] = useState("");
+
+  const load = async () => { const d = await sb("venue_photos?venue_id=eq."+venue.id+"&order=sort_order.asc"); setPhotos(d||[]); };
+  useEffect(() => { load(); }, [venue.id]);
+
+  const add = async () => {
+    if (!url) return;
+    await sb("venue_photos", { method:"POST", body:JSON.stringify({ venue_id:venue.id, image_url:url, caption_es:cap, sort_order:photos.length }) });
+    setUrl(""); setCap(""); load(); showToast("Foto añadida");
+  };
+  const remove = async (id) => { await sb("venue_photos?id=eq."+id, { method:"DELETE" }); load(); showToast("Eliminada","error"); };
+
+  return (
+    <Card>
+      <h2 style={{ fontSize:17, fontWeight:700, marginBottom:18 }}>Galería de fotos</h2>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))", gap:10, marginBottom:18 }}>
+        {photos.map(p => (
+          <div key={p.id} style={{ position:"relative", borderRadius:8, overflow:"hidden", border:"1px solid #eee", background:"#f9f9f9" }}>
+            <img src={p.image_url} alt={p.caption_es||""} style={{ width:"100%", height:120, objectFit:"cover" }} onError={e => { e.target.style.display="none"; }} />
+            <div style={{ padding:6 }}><p style={{ fontSize:11, color:"#666" }}>{p.caption_es||"Sin pie"}</p></div>
+            <button onClick={() => remove(p.id)} style={{
+              position:"absolute", top:4, right:4, background:"rgba(220,53,69,.9)", color:"#fff",
+              border:"none", borderRadius:"50%", width:22, height:22, cursor:"pointer", fontSize:11, fontWeight:700,
+            }}>✕</button>
+          </div>
+        ))}
+      </div>
+      <div style={{ padding:10, background:"#faf5ee", borderRadius:8, display:"flex", gap:6, alignItems:"flex-end", flexWrap:"wrap" }}>
+        <input value={url} onChange={e => setUrl(e.target.value)} placeholder="URL de la imagen" style={{ flex:2, minWidth:120, padding:"6px 8px", border:"1px solid #ddd", borderRadius:4, fontSize:13 }} />
+        <input value={cap} onChange={e => setCap(e.target.value)} placeholder="Pie de foto" style={{ flex:1, minWidth:80, padding:"6px 8px", border:"1px solid #ddd", borderRadius:4, fontSize:13 }} />
+        <Btn onClick={add}>+ Añadir</Btn>
+      </div>
+      <p style={{ fontSize:12, color:"#999", marginTop:8 }}>💡 Sube fotos a Imgur, Cloudinary, etc. y pega la URL aquí.</p>
+    </Card>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<AdminPanel />);
+</script>
+</body>
+</html>
